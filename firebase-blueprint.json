@@ -1,0 +1,124 @@
+{
+  "entities": {
+    "Task": {
+      "title": "Task",
+      "description": "A cleaning task with a specific frequency.",
+      "type": "object",
+      "properties": {
+        "title": { "type": "string", "description": "The name of the task." },
+        "frequency": { "type": "string", "enum": ["daily", "biweekly", "monthly"], "description": "How often the task should be done." },
+        "category": { "type": "string", "description": "The category of the task (e.g., Limpeza, Organização)." }
+      },
+      "required": ["title", "frequency"]
+    },
+    "TaskCompletion": {
+      "title": "TaskCompletion",
+      "description": "A record of a task being completed by a user.",
+      "type": "object",
+      "properties": {
+        "taskId": { "type": "string", "description": "The ID of the task." },
+        "userId": { "type": "string", "description": "The ID of the user who completed the task." },
+        "completedAt": { "type": "string", "format": "date-time", "description": "When the task was completed." },
+        "date": { "type": "string", "description": "The date of completion (YYYY-MM-DD) for daily tracking." }
+      },
+      "required": ["taskId", "userId", "completedAt", "date"]
+    },
+    "User": {
+      "title": "User",
+      "description": "Additional user profile information.",
+      "type": "object",
+      "properties": {
+        "firstName": { "type": "string", "description": "User's first name." },
+        "lastName": { "type": "string", "description": "User's last name." },
+        "birthDate": { "type": "string", "format": "date", "description": "User's date of birth." },
+        "email": { "type": "string", "format": "email", "description": "User's email address." },
+        "createdAt": { "type": "string", "format": "date-time", "description": "When the account was created." }
+      },
+      "required": ["firstName", "lastName", "birthDate", "email"]
+    },
+    "Reminder": {
+      "title": "Reminder",
+      "description": "A custom reminder for a specific task.",
+      "type": "object",
+      "properties": {
+        "taskId": { "type": "string", "description": "The ID of the task." },
+        "userId": { "type": "string", "description": "The ID of the user." },
+        "time": { "type": "string", "description": "The time of the reminder (HH:mm)." },
+        "enabled": { "type": "boolean", "description": "Whether the reminder is enabled." }
+      },
+      "required": ["taskId", "userId", "time", "enabled"]
+    },
+    "CustomTask": {
+      "title": "CustomTask",
+      "description": "A user-defined cleaning task.",
+      "type": "object",
+      "properties": {
+        "userId": { "type": "string", "description": "The ID of the user who created the task." },
+        "title": { "type": "string", "description": "The name of the task." },
+        "frequency": { "type": "string", "enum": ["daily", "biweekly", "monthly", "weekly", "yearly"], "description": "How often the task should be done." },
+        "category": { "type": "string", "description": "The category of the task." },
+        "createdAt": { "type": "string", "format": "date-time", "description": "When the task was created." }
+      },
+      "required": ["userId", "title", "frequency", "category"]
+    },
+    "ShoppingItem": {
+      "title": "ShoppingItem",
+      "description": "An item in the cleaning products shopping list.",
+      "type": "object",
+      "properties": {
+        "userId": { "type": "string", "description": "The ID of the user." },
+        "name": { "type": "string", "description": "The name of the product." },
+        "completed": { "type": "boolean", "description": "Whether the item has been bought." },
+        "createdAt": { "type": "string", "format": "date-time", "description": "When the item was added." }
+      },
+      "required": ["userId", "name", "completed"]
+    },
+    "UserPreferences": {
+      "title": "UserPreferences",
+      "description": "User-specific application settings.",
+      "type": "object",
+      "properties": {
+        "darkMode": { "type": "boolean", "description": "Whether dark mode is enabled." },
+        "themeColor": { "type": "string", "enum": ["violet", "ocean", "forest", "minimalist"], "description": "The selected color theme." },
+        "location": {
+          "type": "object",
+          "properties": {
+            "city": { "type": "string" },
+            "lat": { "type": "number" },
+            "lon": { "type": "number" }
+          }
+        }
+      }
+    }
+  },
+  "firestore": {
+    "/tasks/{taskId}": {
+      "schema": "Task",
+      "description": "Global list of tasks."
+    },
+    "/completions/{completionId}": {
+      "schema": "TaskCompletion",
+      "description": "User task completion records."
+    },
+    "/users/{userId}": {
+      "schema": "User",
+      "description": "User profile data."
+    },
+    "/reminders/{reminderId}": {
+      "schema": "Reminder",
+      "description": "User's custom task reminders."
+    },
+    "/custom_tasks/{taskId}": {
+      "schema": "CustomTask",
+      "description": "User's own custom tasks."
+    },
+    "/shopping_list/{itemId}": {
+      "schema": "ShoppingItem",
+      "description": "User's cleaning products shopping list."
+    },
+    "/preferences/{userId}": {
+      "schema": "UserPreferences",
+      "description": "User application settings."
+    }
+  }
+}

@@ -1,0 +1,5 @@
+{
+  "name": "Planner de Limpeza Doméstica",
+  "description": "Um planner diário para organização de tarefas de limpeza da casa, incluindo rotinas diárias, quinzenais e mensais.",
+  "requestFramePermissions": ["geolocation"]
+}

@@ -1,0 +1,164 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+    // ===============================================================
+    // Assumed Data Model
+    // ===============================================================
+    //
+    // Collection: tasks
+    // Document ID: uuid
+    // Fields:
+    //   - title: string (required)
+    //   - frequency: string (required, 'daily', 'biweekly', 'monthly')
+    //   - category: string (optional)
+    //
+    // Collection: completions
+    // Document ID: uuid
+    // Fields:
+    //   - taskId: string (required)
+    //   - userId: string (required)
+    //   - completedAt: timestamp (required)
+    //   - date: string (required, YYYY-MM-DD)
+    //
+    // Collection: users
+    // Document ID: userId
+    // Fields:
+    //   - firstName: string (required)
+    //   - lastName: string (required)
+    //   - birthDate: string (required, YYYY-MM-DD)
+    //   - email: string (required)
+    //   - createdAt: timestamp (required)
+    //
+    // Collection: reminders
+    // Document ID: uuid
+    // Fields:
+    //   - taskId: string (required)
+    //   - userId: string (required)
+    //   - time: string (required, HH:mm)
+    //   - enabled: bool (required)
+    //
+    // Collection: custom_tasks
+    // Document ID: uuid
+    // Fields:
+    //   - userId: string (required)
+    //   - title: string (required)
+    //   - frequency: string (required, 'daily', 'biweekly', 'monthly', 'weekly', 'yearly')
+    //   - category: string (required)
+    //   - createdAt: timestamp (required)
+    //
+    // Collection: shopping_list
+    // Document ID: uuid
+    // Fields:
+    //   - userId: string (required)
+    //   - name: string (required)
+    //   - completed: bool (required)
+    //   - createdAt: timestamp (required)
+    //
+    // Collection: preferences
+    // Document ID: userId
+    // Fields:
+    //   - darkMode: bool (optional)
+    //   - themeColor: string (optional, 'violet', 'ocean', 'forest', 'minimalist')
+    //   - location: map (optional)
+    //
+    // ===============================================================
+
+    // Helper Functions
+    function isAuthenticated() {
+      return request.auth != null;
+    }
+
+    function isOwner(userId) {
+      return isAuthenticated() && request.auth.uid == userId;
+    }
+
+    function isDocOwner() {
+      return isAuthenticated() && request.auth.uid == resource.data.userId;
+    }
+
+    function isValidTask(data) {
+      return data.title is string && data.title.size() > 0 && data.title.size() < 100 &&
+             data.frequency in ['daily', 'biweekly', 'monthly'];
+    }
+
+    function isValidCustomTask(data) {
+      return data.userId == request.auth.uid &&
+             data.title is string && data.title.size() > 0 && data.title.size() < 100 &&
+             data.frequency in ['daily', 'biweekly', 'monthly', 'weekly', 'yearly'] &&
+             data.category is string &&
+             data.createdAt is timestamp;
+    }
+
+    function isValidShoppingItem(data) {
+      return data.userId == request.auth.uid &&
+             data.name is string && data.name.size() > 0 && data.name.size() < 100 &&
+             data.completed is bool &&
+             data.createdAt is timestamp;
+    }
+
+    function isValidCompletion(data) {
+      return data.taskId is string &&
+             data.userId == request.auth.uid &&
+             data.completedAt is timestamp &&
+             data.date is string && data.date.matches("^\\d{4}-\\d{2}-\\d{2}$");
+    }
+
+    function isValidUser(data) {
+      return data.firstName is string && data.firstName.size() > 0 &&
+             data.lastName is string && data.lastName.size() > 0 &&
+             data.birthDate is string && data.birthDate.matches("^\\d{4}-\\d{2}-\\d{2}$") &&
+             data.email is string && data.email.size() > 0;
+    }
+
+    function isValidReminder(data) {
+      return data.taskId is string &&
+             data.userId == request.auth.uid &&
+             data.time is string && data.time.matches("^\\d{2}:\\d{2}$") &&
+             data.enabled is bool;
+    }
+
+    match /tasks/{taskId} {
+      allow read: if true;
+      allow write: if isAuthenticated();
+    }
+
+    match /completions/{completionId} {
+      allow read: if isAuthenticated() && (resource.data.userId == request.auth.uid);
+      allow create: if isAuthenticated() && isValidCompletion(request.resource.data);
+      allow update: if isAuthenticated() && isDocOwner() && isValidCompletion(request.resource.data);
+      allow delete: if isAuthenticated() && isDocOwner();
+    }
+
+    match /users/{userId} {
+      allow read: if isOwner(userId);
+      allow create: if isOwner(userId) && isValidUser(request.resource.data);
+      allow update: if isOwner(userId) && isValidUser(request.resource.data);
+    }
+
+    match /reminders/{reminderId} {
+      allow read: if isAuthenticated() && (resource.data.userId == request.auth.uid);
+      allow create: if isAuthenticated() && isValidReminder(request.resource.data);
+      allow update: if isAuthenticated() && isDocOwner() && isValidReminder(request.resource.data);
+      allow delete: if isAuthenticated() && isDocOwner();
+    }
+
+    match /custom_tasks/{taskId} {
+      allow read: if isAuthenticated() && (resource.data.userId == request.auth.uid);
+      allow create: if isAuthenticated() && isValidCustomTask(request.resource.data);
+      allow update: if isAuthenticated() && isDocOwner() && isValidCustomTask(request.resource.data);
+      allow delete: if isAuthenticated() && isDocOwner();
+    }
+
+    match /shopping_list/{itemId} {
+      allow read: if isAuthenticated() && (resource.data.userId == request.auth.uid);
+      allow create: if isAuthenticated() && isValidShoppingItem(request.resource.data);
+      allow update: if isAuthenticated() && isDocOwner() && isValidShoppingItem(request.resource.data);
+      allow delete: if isAuthenticated() && isDocOwner();
+    }
+
+    match /preferences/{userId} {
+      allow read: if isOwner(userId);
+      allow create, update: if isOwner(userId);
+    }
+  }
+}

@@ -1,0 +1,77 @@
+@import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800&family=JetBrains+Mono:wght@400;500&display=swap');
+@import "tailwindcss";
+
+@theme {
+  --font-sans: "Inter", ui-sans-serif, system-ui, sans-serif;
+  --font-mono: "JetBrains Mono", ui-monospace, SFMono-Regular, monospace;
+  
+  --color-primary: var(--primary-color, #7c3aed);
+  --color-accent: var(--primary-color, #7c3aed);
+  --color-accent-foreground: #FFFFFF;
+}
+
+@variant dark (&:where(.dark, .dark *));
+
+@layer base {
+  body {
+    @apply font-sans antialiased bg-[#f8fafc] text-slate-900 selection:bg-violet-100 selection:text-violet-900 transition-colors duration-300;
+  }
+
+  .dark body {
+    @apply bg-slate-950 text-slate-50 selection:bg-violet-900 selection:text-violet-100;
+  }
+}
+
+.bento-card {
+  @apply rounded-[32px] border border-slate-200/50 shadow-[0_8px_30px_rgb(0,0,0,0.04)] transition-all duration-500 hover:shadow-[0_20px_50px_rgb(0,0,0,0.08)] hover:-translate-y-1;
+}
+
+.dark .bento-card {
+  @apply border-slate-800/50 shadow-[0_8px_30px_rgb(0,0,0,0.2)];
+}
+
+.bento-card-white {
+  @apply bg-white rounded-[32px] border border-slate-200/50 shadow-[0_8px_30px_rgb(0,0,0,0.04)] transition-all duration-500 hover:shadow-[0_20px_50px_rgb(0,0,0,0.08)] hover:-translate-y-1;
+}
+
+.dark .bento-card-white {
+  @apply bg-slate-900 border-slate-800/50 shadow-[0_8px_30px_rgb(0,0,0,0.2)];
+}
+
+.custom-scrollbar::-webkit-scrollbar-thumb {
+  @apply bg-slate-200 rounded-full;
+}
+
+.dark .custom-scrollbar::-webkit-scrollbar-thumb {
+  @apply bg-slate-800;
+}
+
+.custom-scrollbar::-webkit-scrollbar-thumb:hover {
+  @apply bg-slate-300;
+}
+
+.dark .custom-scrollbar::-webkit-scrollbar-thumb:hover {
+  @apply bg-slate-700;
+}
+
+.glass {
+  @apply bg-white/80 backdrop-blur-xl border border-white/20 shadow-xl;
+}
+
+.dark .glass {
+  @apply bg-slate-900/80 border-white/10;
+}
+
+.text-balance {
+  text-wrap: balance;
+}
+
+@keyframes float {
+  0% { transform: translateY(0px); }
+  50% { transform: translateY(-10px); }
+  100% { transform: translateY(0px); }
+}
+
+.animate-float {
+  animation: float 6s ease-in-out infinite;
+}
