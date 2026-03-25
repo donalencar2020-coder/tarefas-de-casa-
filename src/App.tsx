@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useMemo } from 'react';
+import React, { useState, useEffect, useMemo, useCallback } from 'react';
 import { 
   signInWithPopup, 
   GoogleAuthProvider, 
@@ -44,7 +44,8 @@ import {
   Plus,
   Trash2,
   Settings,
-  CloudSun
+  CloudSun,
+  Volume2
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 import { 
@@ -113,7 +114,8 @@ export default function App() {
   const [shoppingList, setShoppingList] = useState<ShoppingItem[]>([]);
   const [preferences, setPreferences] = useState<UserPreferences>({
     darkMode: false,
-    themeColor: 'violet'
+    themeColor: 'violet',
+    soundEnabled: true
   });
   const [weather, setWeather] = useState<{ temp: number; condition: string; icon: string } | null>(null);
   const [isSettingsOpen, setIsSettingsOpen] = useState(false);
@@ -124,6 +126,8 @@ export default function App() {
   const [newTaskTitle, setNewTaskTitle] = useState('');
   const [newTaskFreq, setNewTaskFreq] = useState<any>('daily');
   const [newTaskCat, setNewTaskCat] = useState('Limpeza');
+  const [newTaskReminderTime, setNewTaskReminderTime] = useState('07:00');
+  const [newTaskReminderEnabled, setNewTaskReminderEnabled] = useState(false);
 
   // Form state for shopping item
   const [newShoppingItem, setNewShoppingItem] = useState('');
@@ -441,6 +445,13 @@ export default function App() {
                 body: `Hora de: ${task.title}`,
                 icon: '/favicon.ico'
               });
+              
+              // Play notification sound
+              if (preferences.soundEnabled) {
+                const audio = new Audio('https://assets.mixkit.co/active_storage/sfx/2869/2869-preview.mp3');
+                audio.play().catch(e => console.error('Error playing sound:', e));
+              }
+
               localStorage.setItem(`last_notified_${reminder.id}_${todayStr}`, currentTime);
             }
           }
@@ -450,18 +461,34 @@ export default function App() {
 
     const interval = setInterval(checkReminders, 10000); // Check every 10 seconds
     return () => clearInterval(interval);
-  }, [notificationsEnabled, reminders, user]);
+  }, [notificationsEnabled, reminders, user, preferences.soundEnabled]);
 
-  const login = async () => {
+  const weeklySectionRef = React.useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    if (viewMode === 'all') {
+      // Pequeno delay para garantir que o conteúdo foi renderizado
+      setTimeout(() => {
+        const element = document.getElementById('section-Semanais');
+        if (element) {
+          element.scrollIntoView({ behavior: 'smooth', block: 'start' });
+        }
+      }, 100);
+    } else {
+      window.scrollTo({ top: 0, behavior: 'smooth' });
+    }
+  }, [viewMode]);
+
+  const login = useCallback(async () => {
     const provider = new GoogleAuthProvider();
     try {
       await signInWithPopup(auth, provider);
     } catch (error) {
       console.error('Login error:', error);
     }
-  };
+  }, []);
 
-  const loginAnonymously = async () => {
+  const loginAnonymously = useCallback(async () => {
     setAuthError('');
     try {
       // Importante: O provedor "Anonymous" deve estar ativado no Firebase Console
@@ -470,7 +497,7 @@ export default function App() {
       setAuthError('Erro ao entrar como convidado. Verifique se o login anônimo está ativado no Firebase.');
       console.error('Anonymous Login error:', error);
     }
-  };
+  }, []);
 
   const handleEmailAuth = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -527,15 +554,15 @@ export default function App() {
     }
   };
 
-  const logout = async () => {
+  const logout = useCallback(async () => {
     try {
       await signOut(auth);
     } catch (error) {
       console.error('Logout error:', error);
     }
-  };
+  }, []);
 
-  const toggleTask = async (taskId: string) => {
+  const toggleTask = useCallback(async (taskId: string) => {
     if (!user) return;
     const todayStr = format(currentDate, 'yyyy-MM-dd');
     const existing = completions.find(c => c.taskId === taskId && c.date === todayStr);
@@ -550,9 +577,9 @@ export default function App() {
         date: todayStr
       });
     }
-  };
+  }, [user, currentDate, completions]);
 
-  const updateReminder = async (taskId: string, time: string, enabled: boolean) => {
+  const updateReminder = useCallback(async (taskId: string, time: string, enabled: boolean) => {
     if (!user) return;
     const existing = reminders.find(r => r.taskId === taskId);
 
@@ -570,7 +597,7 @@ export default function App() {
         enabled
       });
     }
-  };
+  }, [user, reminders]);
 
   const isTaskDueOnDate = (task: Task, date: Date) => {
     const dayOfMonth = getDate(date);
@@ -621,27 +648,39 @@ export default function App() {
     e.preventDefault();
     if (!user || !newTaskTitle) return;
     try {
-      await addDoc(collection(db, 'custom_tasks'), {
+      const docRef = await addDoc(collection(db, 'custom_tasks'), {
         userId: user.uid,
         title: newTaskTitle,
         frequency: newTaskFreq,
         category: newTaskCat,
         createdAt: serverTimestamp()
       });
+
+      if (newTaskReminderEnabled) {
+        await addDoc(collection(db, 'reminders'), {
+          taskId: docRef.id,
+          userId: user.uid,
+          time: newTaskReminderTime,
+          enabled: true
+        });
+      }
+
       setNewTaskTitle('');
+      setNewTaskReminderEnabled(false);
+      setNewTaskReminderTime('07:00');
       setIsAddTaskOpen(false);
     } catch (e) {
       console.error('Error adding custom task:', e);
     }
   };
 
-  const deleteCustomTask = async (id: string) => {
+  const deleteCustomTask = useCallback(async (id: string) => {
     try {
       await deleteDoc(doc(db, 'custom_tasks', id));
     } catch (e) {
       console.error('Error deleting custom task:', e);
     }
-  };
+  }, []);
 
   const addShoppingItem = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -678,7 +717,7 @@ export default function App() {
     }
   };
 
-  const updatePreferences = async (newPrefs: Partial<UserPreferences>) => {
+  const updatePreferences = useCallback(async (newPrefs: Partial<UserPreferences>) => {
     if (!user) return;
     try {
       await setDoc(doc(db, 'preferences', user.uid), {
@@ -688,7 +727,13 @@ export default function App() {
     } catch (e) {
       console.error('Error updating preferences:', e);
     }
-  };
+  }, [user, preferences]);
+
+  const goToToday = useCallback(() => setViewMode('today'), []);
+  const goToAll = useCallback(() => setViewMode('all'), []);
+  const openSettings = useCallback(() => setIsSettingsOpen(true), []);
+  const openShopping = useCallback(() => setIsShoppingOpen(true), []);
+  const openAddTask = useCallback(() => setIsAddTaskOpen(true), []);
 
   if (loading) {
     return (
@@ -948,20 +993,20 @@ export default function App() {
         <nav className="flex-1 flex flex-col gap-6">
           <SidebarIconButton 
             active={viewMode === 'today'} 
-            onClick={() => setViewMode('today')} 
+            onClick={goToToday} 
             icon={<Activity className="w-6 h-6" />} 
             label="Hoje" 
             badge={tasksPendingToday > 0 ? tasksPendingToday : undefined}
           />
           <SidebarIconButton 
             active={viewMode === 'all'} 
-            onClick={() => setViewMode('all')} 
+            onClick={goToAll} 
             icon={<LayoutGrid className="w-6 h-6" />} 
             label="Cronograma" 
           />
           <SidebarIconButton 
             active={isShoppingOpen} 
-            onClick={() => setIsShoppingOpen(true)} 
+            onClick={openShopping} 
             icon={<ShoppingBag className="w-6 h-6" />} 
             label="Lista de Compras" 
             badge={shoppingList.filter(i => !i.completed).length || undefined}
@@ -981,7 +1026,7 @@ export default function App() {
         </nav>
 
         <div className="mt-auto flex flex-col gap-6 items-center">
-          <button onClick={() => setIsSettingsOpen(true)} className="p-3 text-slate-400 hover:text-violet-500 transition-all">
+          <button onClick={openSettings} className="p-3 text-slate-400 hover:text-violet-500 transition-all">
             <Settings className="w-6 h-6" />
           </button>
           <div className="w-12 h-12 bg-slate-100 rounded-2xl overflow-hidden border-2 border-white shadow-sm">
@@ -1068,19 +1113,19 @@ export default function App() {
             </div>
             <div className="mt-8 md:mt-10 flex flex-wrap items-center gap-3 md:gap-4">
               <button 
-                onClick={() => setViewMode('today')}
+                onClick={goToToday}
                 className={`px-4 md:px-6 py-2 md:py-3 rounded-xl md:rounded-2xl font-bold text-sm md:text-base transition-all ${viewMode === 'today' ? 'bg-primary text-white shadow-lg shadow-primary/20' : 'bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-400 hover:bg-slate-200 dark:hover:bg-slate-700'}`}
               >
                 Hoje
               </button>
               <button 
-                onClick={() => setViewMode('all')}
+                onClick={goToAll}
                 className={`px-4 md:px-6 py-2 md:py-3 rounded-xl md:rounded-2xl font-bold text-sm md:text-base transition-all ${viewMode === 'all' ? 'bg-primary text-white shadow-lg shadow-primary/20' : 'bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-400 hover:bg-slate-200 dark:hover:bg-slate-700'}`}
               >
                 Cronograma
               </button>
               <button 
-                onClick={() => setIsAddTaskOpen(true)}
+                onClick={openAddTask}
                 className="px-4 md:px-6 py-2 md:py-3 rounded-xl md:rounded-2xl font-bold bg-primary text-white shadow-lg shadow-primary/20 hover:opacity-90 transition-all flex items-center gap-2 text-sm md:text-base"
               >
                 <Plus className="w-4 h-4 md:w-5 md:h-5" />
@@ -1145,8 +1190,8 @@ export default function App() {
                           task={task} 
                           completed={isCompletedToday(task.id)} 
                           reminder={reminders.find(r => r.taskId === task.id)}
-                          onToggle={() => toggleTask(task.id)}
-                          onUpdateReminder={(time, enabled) => updateReminder(task.id, time, enabled)}
+                          onToggle={toggleTask}
+                          onUpdateReminder={updateReminder}
                           onDeleteCustomTask={deleteCustomTask}
                           delay={idx * 0.05}
                           currentDate={currentDate}
@@ -1263,20 +1308,20 @@ export default function App() {
               <nav className="flex-1 space-y-4">
                 <SidebarMobileLink 
                   active={viewMode === 'today'} 
-                  onClick={() => { setViewMode('today'); setIsSidebarOpen(false); }} 
+                  onClick={() => { goToToday(); setIsSidebarOpen(false); }} 
                   icon={<Activity className="w-6 h-6" />} 
                   label="Hoje" 
                   badge={tasksPendingToday > 0 ? tasksPendingToday : undefined}
                 />
                 <SidebarMobileLink 
                   active={viewMode === 'all'} 
-                  onClick={() => { setViewMode('all'); setIsSidebarOpen(false); }} 
+                  onClick={() => { goToAll(); setIsSidebarOpen(false); }} 
                   icon={<LayoutGrid className="w-6 h-6" />} 
                   label="Cronograma" 
                 />
                 <SidebarMobileLink 
                   active={isShoppingOpen} 
-                  onClick={() => { setIsShoppingOpen(true); setIsSidebarOpen(false); }} 
+                  onClick={() => { openShopping(); setIsSidebarOpen(false); }} 
                   icon={<ShoppingBag className="w-6 h-6" />} 
                   label="Lista de Compras" 
                   badge={shoppingList.filter(i => !i.completed).length || undefined}
@@ -1295,7 +1340,7 @@ export default function App() {
               </nav>
 
               <div className="mt-auto pt-10 border-t border-slate-100 space-y-4">
-                <button onClick={() => { setIsSettingsOpen(true); setIsSidebarOpen(false); }} className="w-full flex items-center gap-4 p-5 text-slate-500 hover:text-violet-500 transition-all font-black">
+                <button onClick={() => { openSettings(); setIsSidebarOpen(false); }} className="w-full flex items-center gap-4 p-5 text-slate-500 hover:text-violet-500 transition-all font-black">
                   <Settings className="w-6 h-6" />
                   Configurações
                 </button>
@@ -1432,6 +1477,31 @@ export default function App() {
                       );
                     })}
                   </div>
+                </div>
+
+                <div>
+                  <div className="flex items-center justify-between mb-4">
+                    <label className="text-[10px] md:text-xs font-black text-slate-400 dark:text-slate-500 uppercase tracking-widest block">Som de Notificação</label>
+                    <button 
+                      onClick={() => updatePreferences({ soundEnabled: !preferences.soundEnabled })}
+                      className={`relative inline-flex h-6 w-11 items-center rounded-full transition-colors focus:outline-none ${preferences.soundEnabled ? 'bg-primary' : 'bg-slate-200 dark:bg-slate-700'}`}
+                    >
+                      <span
+                        className={`inline-block h-4 w-4 transform rounded-full bg-white transition-transform ${preferences.soundEnabled ? 'translate-x-6' : 'translate-x-1'}`}
+                      />
+                    </button>
+                  </div>
+                  <button 
+                    onClick={() => {
+                      const audio = new Audio('https://assets.mixkit.co/active_storage/sfx/2869/2869-preview.mp3');
+                      audio.play().catch(e => console.error('Error playing sound:', e));
+                    }}
+                    disabled={!preferences.soundEnabled}
+                    className={`w-full p-4 rounded-2xl border-2 flex items-center justify-center gap-3 font-bold transition-all active:scale-95 ${!preferences.soundEnabled ? 'opacity-50 cursor-not-allowed border-slate-100 dark:border-slate-800 text-slate-400' : 'border-slate-100 dark:border-slate-800 text-slate-600 dark:text-slate-300 hover:bg-slate-50 dark:hover:bg-slate-800/50'}`}
+                  >
+                    <Volume2 className={`w-5 h-5 ${preferences.soundEnabled ? 'text-primary' : 'text-slate-400'}`} />
+                    <span>Testar Som de Alerta</span>
+                  </button>
                 </div>
               </div>
             </motion.div>
@@ -1570,6 +1640,43 @@ export default function App() {
                   </div>
                 </div>
 
+                <div className="bg-slate-50 dark:bg-slate-800/50 p-4 md:p-6 rounded-2xl md:rounded-[32px] border border-slate-100 dark:border-slate-800">
+                  <div className="flex items-center justify-between mb-4">
+                    <div className="flex items-center gap-3">
+                      <div className={`w-10 h-10 rounded-xl flex items-center justify-center ${newTaskReminderEnabled ? 'bg-primary text-white' : 'bg-slate-200 dark:bg-slate-700 text-slate-400'}`}>
+                        <Clock className="w-5 h-5" />
+                      </div>
+                      <div>
+                        <h4 className="font-bold text-slate-900 dark:text-white text-sm md:text-base">Lembrete</h4>
+                        <p className="text-[10px] md:text-xs text-slate-400 dark:text-slate-500 font-bold uppercase tracking-widest">Notificação no celular</p>
+                      </div>
+                    </div>
+                    <button 
+                      type="button"
+                      onClick={() => setNewTaskReminderEnabled(!newTaskReminderEnabled)}
+                      className={`w-12 h-6 rounded-full transition-all relative ${newTaskReminderEnabled ? 'bg-primary' : 'bg-slate-300 dark:bg-slate-600'}`}
+                    >
+                      <div className={`absolute top-1 w-4 h-4 bg-white rounded-full transition-all ${newTaskReminderEnabled ? 'left-7' : 'left-1'}`} />
+                    </button>
+                  </div>
+                  
+                  {newTaskReminderEnabled && (
+                    <motion.div 
+                      initial={{ opacity: 0, height: 0 }}
+                      animate={{ opacity: 1, height: 'auto' }}
+                      className="pt-4 border-t border-slate-200 dark:border-slate-700"
+                    >
+                      <label className="text-[10px] md:text-xs font-black text-slate-400 dark:text-slate-500 uppercase tracking-widest mb-2 block">Horário do Lembrete</label>
+                      <input 
+                        type="time" 
+                        value={newTaskReminderTime}
+                        onChange={(e) => setNewTaskReminderTime(e.target.value)}
+                        className="w-full bg-white dark:bg-slate-900 border border-slate-100 dark:border-slate-700 p-3 md:p-4 rounded-xl md:rounded-2xl focus:outline-none focus:ring-2 focus:ring-primary/20 font-bold text-slate-900 dark:text-white"
+                      />
+                    </motion.div>
+                  )}
+                </div>
+
                 <button 
                   type="submit"
                   className="w-full bg-primary text-white py-4 md:py-5 rounded-xl md:rounded-2xl font-bold hover:opacity-90 transition-all shadow-xl shadow-primary/20 active:scale-95 mt-4 text-sm md:text-base"
@@ -1665,7 +1772,7 @@ interface SidebarIconButtonProps {
   badge?: number;
 }
 
-const SidebarIconButton: React.FC<SidebarIconButtonProps> = ({ active, onClick, icon, label, badge }) => (
+const SidebarIconButton: React.FC<SidebarIconButtonProps> = React.memo(({ active, onClick, icon, label, badge }) => (
   <button 
     onClick={onClick}
     title={label}
@@ -1683,7 +1790,7 @@ const SidebarIconButton: React.FC<SidebarIconButtonProps> = ({ active, onClick, 
       </span>
     )}
   </button>
-);
+));
 
 interface SidebarMobileLinkProps {
   active: boolean;
@@ -1693,7 +1800,7 @@ interface SidebarMobileLinkProps {
   badge?: number;
 }
 
-const SidebarMobileLink: React.FC<SidebarMobileLinkProps> = ({ active, onClick, icon, label, badge }) => (
+const SidebarMobileLink: React.FC<SidebarMobileLinkProps> = React.memo(({ active, onClick, icon, label, badge }) => (
   <button 
     onClick={onClick}
     className={`w-full flex items-center gap-5 p-5 rounded-2xl transition-all font-black text-lg relative ${active ? 'bg-primary text-white shadow-xl shadow-primary/20' : 'text-slate-500 dark:text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-800'}`}
@@ -1706,7 +1813,7 @@ const SidebarMobileLink: React.FC<SidebarMobileLinkProps> = ({ active, onClick, 
       </span>
     )}
   </button>
-);
+));
 
 interface BentoCategorySectionProps {
   title: string;
@@ -1720,10 +1827,10 @@ interface BentoCategorySectionProps {
   currentDate: Date;
 }
 
-const BentoCategorySection: React.FC<BentoCategorySectionProps> = ({ title, icon, tasks, completions, reminders, onToggle, onUpdateReminder, onDeleteCustomTask, currentDate }) => {
+const BentoCategorySection: React.FC<BentoCategorySectionProps> = React.memo(({ title, icon, tasks, completions, reminders, onToggle, onUpdateReminder, onDeleteCustomTask, currentDate }) => {
   const todayStr = format(currentDate, 'yyyy-MM-dd');
   return (
-    <div className="space-y-8">
+    <div className="space-y-8" id={`section-${title}`}>
       <div className="flex items-center gap-3 md:gap-5">
         <div className="w-10 h-10 md:w-14 md:h-14 bg-white dark:bg-slate-900 rounded-xl md:rounded-[20px] flex items-center justify-center text-primary shadow-sm border border-slate-200/50 dark:border-slate-800/50">
           {icon}
@@ -1737,8 +1844,8 @@ const BentoCategorySection: React.FC<BentoCategorySectionProps> = ({ title, icon
             task={task} 
             completed={completions.some(c => c.taskId === task.id && c.date === todayStr)} 
             reminder={reminders.find(r => r.taskId === task.id)}
-            onToggle={() => onToggle(task.id)} 
-            onUpdateReminder={(time, enabled) => onUpdateReminder(task.id, time, enabled)}
+            onToggle={onToggle} 
+            onUpdateReminder={onUpdateReminder}
             onDeleteCustomTask={onDeleteCustomTask}
             delay={idx * 0.05}
             currentDate={currentDate}
@@ -1747,22 +1854,35 @@ const BentoCategorySection: React.FC<BentoCategorySectionProps> = ({ title, icon
       </div>
     </div>
   );
-};
+});
 
 interface BentoTaskItemProps {
   task: Task;
   completed: boolean;
   reminder?: Reminder;
-  onToggle: () => void | Promise<void>;
-  onUpdateReminder: (time: string, enabled: boolean) => Promise<void>;
+  onToggle: (id: string) => void | Promise<void>;
+  onUpdateReminder: (taskId: string, time: string, enabled: boolean) => Promise<void>;
   onDeleteCustomTask?: (id: string) => Promise<void>;
   delay: number;
   currentDate: Date;
 }
 
-const BentoTaskItem: React.FC<BentoTaskItemProps> = ({ task, completed, reminder, onToggle, onUpdateReminder, onDeleteCustomTask, delay, currentDate }) => {
+const BentoTaskItem: React.FC<BentoTaskItemProps> = React.memo(({ task, completed, reminder, onToggle, onUpdateReminder, onDeleteCustomTask, delay, currentDate }) => {
   const [showTimePicker, setShowTimePicker] = useState(false);
   const [tempTime, setTempTime] = useState(reminder?.time || '07:00');
+
+  useEffect(() => {
+    if (reminder?.time) setTempTime(reminder.time);
+  }, [reminder?.time]);
+
+  const handleToggle = useCallback((e?: React.MouseEvent) => {
+    e?.stopPropagation();
+    onToggle(task.id);
+  }, [onToggle, task.id]);
+
+  const handleUpdateReminder = useCallback((time: string, enabled: boolean) => {
+    onUpdateReminder(task.id, time, enabled);
+  }, [onUpdateReminder, task.id]);
 
   const getRecurrenceText = () => {
     if (task.isWeatherSuggestion) return 'Sugestão Baseada no Clima';
@@ -1795,7 +1915,7 @@ const BentoTaskItem: React.FC<BentoTaskItemProps> = ({ task, completed, reminder
     >
       <div className="flex justify-between items-start">
         <div 
-          onClick={onToggle}
+          onClick={handleToggle}
           className={`w-10 h-10 rounded-xl border-2 flex items-center justify-center transition-all duration-500 ${completed ? 'bg-green-500 border-green-500' : 'border-slate-200 dark:border-slate-700 group-hover:border-primary group-hover:bg-primary/10'}`}
         >
           {completed && <CheckCircle2 className="w-6 h-6 text-white" />}
@@ -1819,20 +1939,20 @@ const BentoTaskItem: React.FC<BentoTaskItemProps> = ({ task, completed, reminder
         </div>
       </div>
       
-      <div onClick={onToggle}>
+      <div onClick={handleToggle}>
         <h4 className={`text-xl font-black leading-tight mb-2 transition-all ${completed ? 'line-through text-slate-400 dark:text-slate-500' : 'text-slate-900 dark:text-white'}`}>{task.title}</h4>
         <p className={`text-xs font-bold uppercase tracking-widest ${completed ? 'text-slate-400 dark:text-slate-500' : task.isWeatherSuggestion ? 'text-amber-500' : 'text-primary'}`}>{getRecurrenceText()}</p>
       </div>
 
       {!completed && !task.isWeatherSuggestion && (
         <div className="mt-4 pt-4 border-t border-slate-100 dark:border-slate-800 flex items-center justify-between">
-          <div className="flex items-center gap-2">
+          <div className="flex items-center gap-3">
             <button 
               onClick={(e) => {
                 e.stopPropagation();
                 setShowTimePicker(true);
               }}
-              className={`flex items-center gap-2 transition-colors ${reminder?.enabled ? 'text-primary' : 'text-slate-400 dark:text-slate-500 hover:text-primary'}`}
+              className={`flex items-center gap-2 transition-all p-2 rounded-xl ${reminder?.enabled ? 'bg-primary/10 text-primary' : 'bg-slate-100 dark:bg-slate-800 text-slate-400 dark:text-slate-500 hover:text-primary'}`}
             >
               <Clock className="w-4 h-4" />
               {showTimePicker ? (
@@ -1842,7 +1962,7 @@ const BentoTaskItem: React.FC<BentoTaskItemProps> = ({ task, completed, reminder
                   onChange={(e) => setTempTime(e.target.value)}
                   onKeyDown={(e) => {
                     if (e.key === 'Enter') {
-                      onUpdateReminder(tempTime, true);
+                      handleUpdateReminder(tempTime, true);
                       setShowTimePicker(false);
                     }
                     if (e.key === 'Escape') {
@@ -1850,34 +1970,33 @@ const BentoTaskItem: React.FC<BentoTaskItemProps> = ({ task, completed, reminder
                     }
                   }}
                   onBlur={() => {
-                    onUpdateReminder(tempTime, true);
+                    handleUpdateReminder(tempTime, true);
                     setShowTimePicker(false);
                   }}
-                  className="text-xs font-bold text-primary bg-primary/10 px-2 py-1 rounded-lg focus:outline-none border border-primary/20"
+                  className="text-xs font-bold text-primary bg-transparent focus:outline-none w-16"
                   autoFocus
                   onClick={(e) => e.stopPropagation()}
                 />
               ) : (
                 <span className="text-xs font-bold">
-                  {reminder?.enabled ? reminder.time : 'Definir Lembrete'}
+                  {reminder?.enabled ? reminder.time : 'Lembrete'}
                 </span>
               )}
             </button>
           </div>
           
-          {reminder && (
-            <button 
-              onClick={(e) => {
-                e.stopPropagation();
-                onUpdateReminder(reminder.time, !reminder.enabled);
-              }}
-              className={`text-[10px] font-black uppercase tracking-widest px-2 py-1 rounded-lg transition-all ${reminder.enabled ? 'bg-green-50 dark:bg-green-900/30 text-green-600 dark:text-green-400' : 'bg-slate-100 dark:bg-slate-800 text-slate-400 dark:text-slate-500'}`}
-            >
-              {reminder.enabled ? 'Ativo' : 'Inativo'}
-            </button>
-          )}
+          <button 
+            type="button"
+            onClick={(e) => {
+              e.stopPropagation();
+              handleUpdateReminder(reminder?.time || '07:00', !reminder?.enabled);
+            }}
+            className={`w-10 h-5 rounded-full transition-all relative ${reminder?.enabled ? 'bg-primary' : 'bg-slate-300 dark:bg-slate-600'}`}
+          >
+            <div className={`absolute top-0.5 w-4 h-4 bg-white rounded-full transition-all ${reminder?.enabled ? 'left-5.5' : 'left-0.5'}`} />
+          </button>
         </div>
       )}
     </motion.div>
   );
-};
+});
