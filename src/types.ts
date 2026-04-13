@@ -40,7 +40,6 @@ export type ThemeColor = 'violet' | 'ocean' | 'forest' | 'minimalist' | 'pink' |
 export interface UserPreferences {
   darkMode: boolean;
   themeColor: ThemeColor;
-  soundEnabled: boolean;
   location?: {
     city: string;
     lat: number;

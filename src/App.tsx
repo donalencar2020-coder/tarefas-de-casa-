@@ -45,9 +45,12 @@ import {
   Trash2,
   Settings,
   CloudSun,
-  Volume2
+  Bot,
+  Loader2
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
+import { generateTasksWithAI } from './services/groq';
+import { Toaster, toast } from 'sonner';
 import { 
   collection, 
   addDoc, 
@@ -114,13 +117,16 @@ export default function App() {
   const [shoppingList, setShoppingList] = useState<ShoppingItem[]>([]);
   const [preferences, setPreferences] = useState<UserPreferences>({
     darkMode: false,
-    themeColor: 'violet',
-    soundEnabled: true
+    themeColor: 'violet'
   });
   const [weather, setWeather] = useState<{ temp: number; condition: string; icon: string } | null>(null);
   const [isSettingsOpen, setIsSettingsOpen] = useState(false);
   const [isShoppingOpen, setIsShoppingOpen] = useState(false);
   const [isAddTaskOpen, setIsAddTaskOpen] = useState(false);
+  const [isAIOpen, setIsAIOpen] = useState(false);
+  const [aiPrompt, setAiPrompt] = useState('');
+  const [isAILoading, setIsAILoading] = useState(false);
+  const [aiError, setAiError] = useState<string | null>(null);
 
   // Form states for new task
   const [newTaskTitle, setNewTaskTitle] = useState('');
@@ -182,10 +188,14 @@ export default function App() {
       const permission = await Notification.requestPermission();
       if (permission === 'granted') {
         setNotificationsEnabled(true);
-        new Notification('Task Home', {
-          body: 'Lembretes ativados! Você receberá avisos nos horários definidos.',
-          icon: '/favicon.ico'
-        });
+        try {
+          new Notification('Task Home', {
+            body: 'Lembretes ativados! Você receberá avisos nos horários definidos.',
+            icon: '/favicon.ico'
+          });
+        } catch (e) {
+          console.error('Erro ao mostrar notificação nativa:', e);
+        }
       } else if (permission === 'denied') {
         setNotificationError('Permissão negada. Ative nas configurações do navegador.');
       }
@@ -441,15 +451,21 @@ export default function App() {
             // Check if already notified this minute to avoid multiple notifications
             const lastNotified = localStorage.getItem(`last_notified_${reminder.id}_${todayStr}`);
             if (lastNotified !== currentTime) {
-              new Notification('Lembrete de Tarefa', {
-                body: `Hora de: ${task.title}`,
-                icon: '/favicon.ico'
+              // In-app banner (like WhatsApp)
+              toast('Lembrete de Tarefa', {
+                description: `Hora de: ${task.title}`,
+                duration: 10000,
+                icon: '⏰',
               });
-              
-              // Play notification sound
-              if (preferences.soundEnabled) {
-                const audio = new Audio('https://assets.mixkit.co/active_storage/sfx/2869/2869-preview.mp3');
-                audio.play().catch(e => console.error('Error playing sound:', e));
+
+              try {
+                // Native Notification
+                new Notification('Lembrete de Tarefa', {
+                  body: `Hora de: ${task.title}`,
+                  icon: '/favicon.ico'
+                });
+              } catch (e) {
+                console.error('Erro ao mostrar notificação nativa:', e);
               }
 
               localStorage.setItem(`last_notified_${reminder.id}_${todayStr}`, currentTime);
@@ -461,7 +477,7 @@ export default function App() {
 
     const interval = setInterval(checkReminders, 10000); // Check every 10 seconds
     return () => clearInterval(interval);
-  }, [notificationsEnabled, reminders, user, preferences.soundEnabled]);
+  }, [notificationsEnabled, reminders, user]);
 
   const weeklySectionRef = React.useRef<HTMLDivElement>(null);
 
@@ -982,8 +998,57 @@ export default function App() {
     );
   }
 
+  const handleAIGenerate = async () => {
+    if (!aiPrompt.trim() || !user) return;
+    
+    setIsAILoading(true);
+    setAiError(null);
+    
+    try {
+      const generatedTasks = await generateTasksWithAI(aiPrompt);
+      
+      if (generatedTasks.length === 0) {
+        setAiError("A IA não conseguiu gerar tarefas. Tente ser mais específico.");
+        return;
+      }
+
+      // Add generated tasks to custom tasks
+      for (const t of generatedTasks) {
+        const newTask = {
+          title: t.title,
+          frequency: 'daily',
+          category: t.category,
+          userId: user.uid,
+          createdAt: serverTimestamp()
+        };
+        
+        const docRef = await addDoc(collection(db, 'custom_tasks'), newTask);
+        
+        // Add default reminder for the new task
+        await addDoc(collection(db, 'reminders'), {
+          taskId: docRef.id,
+          userId: user.uid,
+          time: '09:00',
+          enabled: false
+        });
+      }
+      
+      setAiPrompt('');
+      setIsAIOpen(false);
+      
+      // Show success notification
+      toast.success(`${generatedTasks.length} tarefas criadas com sucesso!`);
+    } catch (error: any) {
+      console.error("Erro na IA:", error);
+      setAiError(error.message || "Ocorreu um erro ao gerar as tarefas.");
+    } finally {
+      setIsAILoading(false);
+    }
+  };
+
   return (
     <div className="min-h-screen bg-[#f8fafc] flex flex-col lg:flex-row">
+      <Toaster position="top-center" theme={preferences.darkMode ? 'dark' : 'light'} richColors />
       {/* Sidebar Desktop */}
       <aside className="hidden lg:flex w-24 bg-white border-r border-slate-200/50 flex-col items-center py-10 fixed h-full z-20">
         <div className="w-12 h-12 bg-violet-600 rounded-2xl flex items-center justify-center shadow-lg shadow-violet-500/20 mb-12">
@@ -1054,6 +1119,13 @@ export default function App() {
           </div>
           <div className="flex items-center gap-2">
             <button 
+              onClick={() => setIsAIOpen(true)}
+              className="p-3 bg-white dark:bg-slate-900 rounded-2xl border border-slate-200 dark:border-slate-800 shadow-sm text-primary hover:bg-primary/5 transition-all active:scale-95"
+              title="Assistente IA"
+            >
+              <Bot className="w-6 h-6" />
+            </button>
+            <button 
               onClick={logout} 
               className="p-3 bg-white dark:bg-slate-900 rounded-2xl border border-slate-200 dark:border-slate-800 shadow-sm text-slate-400 dark:text-slate-500 hover:text-red-500 transition-all active:scale-95"
               title="Sair da conta"
@@ -1103,8 +1175,15 @@ export default function App() {
                   </div>
                 )}
                 <button 
+                  onClick={() => setIsAIOpen(true)}
+                  className="hidden lg:flex p-4 md:p-6 bg-white/50 dark:bg-slate-800/50 backdrop-blur-sm rounded-3xl border border-white/50 dark:border-slate-700/50 text-primary hover:bg-primary/5 transition-all active:scale-95 group shadow-sm"
+                  title="Assistente IA"
+                >
+                  <Bot className="w-6 h-6 md:w-8 md:h-8 group-hover:scale-110 transition-transform" />
+                </button>
+                <button 
                   onClick={logout}
-                  className="hidden lg:flex p-4 md:p-6 bg-white/50 backdrop-blur-sm rounded-3xl border border-white/50 text-slate-400 hover:text-red-500 transition-all active:scale-95 group shadow-sm"
+                  className="hidden lg:flex p-4 md:p-6 bg-white/50 dark:bg-slate-800/50 backdrop-blur-sm rounded-3xl border border-white/50 dark:border-slate-700/50 text-slate-400 dark:text-slate-500 hover:text-red-500 transition-all active:scale-95 group shadow-sm"
                   title="Sair da conta"
                 >
                   <LogOut className="w-6 h-6 md:w-8 md:h-8 group-hover:scale-110 transition-transform" />
@@ -1478,31 +1557,6 @@ export default function App() {
                     })}
                   </div>
                 </div>
-
-                <div>
-                  <div className="flex items-center justify-between mb-4">
-                    <label className="text-[10px] md:text-xs font-black text-slate-400 dark:text-slate-500 uppercase tracking-widest block">Som de Notificação</label>
-                    <button 
-                      onClick={() => updatePreferences({ soundEnabled: !preferences.soundEnabled })}
-                      className={`relative inline-flex h-6 w-11 items-center rounded-full transition-colors focus:outline-none ${preferences.soundEnabled ? 'bg-primary' : 'bg-slate-200 dark:bg-slate-700'}`}
-                    >
-                      <span
-                        className={`inline-block h-4 w-4 transform rounded-full bg-white transition-transform ${preferences.soundEnabled ? 'translate-x-6' : 'translate-x-1'}`}
-                      />
-                    </button>
-                  </div>
-                  <button 
-                    onClick={() => {
-                      const audio = new Audio('https://assets.mixkit.co/active_storage/sfx/2869/2869-preview.mp3');
-                      audio.play().catch(e => console.error('Error playing sound:', e));
-                    }}
-                    disabled={!preferences.soundEnabled}
-                    className={`w-full p-4 rounded-2xl border-2 flex items-center justify-center gap-3 font-bold transition-all active:scale-95 ${!preferences.soundEnabled ? 'opacity-50 cursor-not-allowed border-slate-100 dark:border-slate-800 text-slate-400' : 'border-slate-100 dark:border-slate-800 text-slate-600 dark:text-slate-300 hover:bg-slate-50 dark:hover:bg-slate-800/50'}`}
-                  >
-                    <Volume2 className={`w-5 h-5 ${preferences.soundEnabled ? 'text-primary' : 'text-slate-400'}`} />
-                    <span>Testar Som de Alerta</span>
-                  </button>
-                </div>
               </div>
             </motion.div>
           </div>
@@ -1569,6 +1623,85 @@ export default function App() {
                     <p className="text-slate-400 dark:text-slate-500 font-bold">Sua lista está vazia</p>
                   </div>
                 )}
+              </div>
+            </motion.div>
+          </div>
+        )}
+      </AnimatePresence>
+
+      {/* AI Assistant Modal */}
+      <AnimatePresence>
+        {isAIOpen && (
+          <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
+            <motion.div 
+              initial={{ opacity: 0 }}
+              animate={{ opacity: 1 }}
+              exit={{ opacity: 0 }}
+              className="absolute inset-0 bg-slate-900/40 dark:bg-black/60 backdrop-blur-sm"
+              onClick={() => setIsAIOpen(false)}
+            />
+            <motion.div 
+              initial={{ opacity: 0, scale: 0.95, y: 20 }}
+              animate={{ opacity: 1, scale: 1, y: 0 }}
+              exit={{ opacity: 0, scale: 0.95, y: 20 }}
+              className="relative w-full max-w-lg bg-white dark:bg-slate-900 rounded-[2rem] shadow-2xl overflow-hidden border border-slate-100 dark:border-slate-800"
+            >
+              <div className="p-6 md:p-8">
+                <div className="flex items-center justify-between mb-8">
+                  <div className="flex items-center gap-4">
+                    <div className="w-12 h-12 rounded-2xl bg-primary/10 flex items-center justify-center">
+                      <Bot className="w-6 h-6 text-primary" />
+                    </div>
+                    <div>
+                      <h2 className="text-2xl font-black text-slate-900 dark:text-white tracking-tight">Assistente IA</h2>
+                      <p className="text-sm text-slate-500 dark:text-slate-400 font-medium">Gerador de tarefas inteligente</p>
+                    </div>
+                  </div>
+                  <button 
+                    onClick={() => setIsAIOpen(false)}
+                    className="p-2 hover:bg-slate-100 dark:hover:bg-slate-800 rounded-xl transition-all"
+                  >
+                    <X className="w-6 h-6 text-slate-400" />
+                  </button>
+                </div>
+
+                <div className="space-y-6">
+                  <div>
+                    <label className="block text-sm font-bold text-slate-700 dark:text-slate-300 mb-2">
+                      O que você precisa organizar?
+                    </label>
+                    <textarea
+                      value={aiPrompt}
+                      onChange={(e) => setAiPrompt(e.target.value)}
+                      placeholder="Ex: Vou receber visitas no fim de semana e preciso limpar a casa toda. Crie tarefas para mim."
+                      className="w-full p-4 bg-slate-50 dark:bg-slate-800 border-2 border-slate-100 dark:border-slate-700 rounded-2xl focus:border-primary focus:ring-4 focus:ring-primary/10 transition-all outline-none resize-none h-32 text-slate-900 dark:text-white"
+                    />
+                  </div>
+
+                  {aiError && (
+                    <div className="p-4 bg-red-50 dark:bg-red-900/20 text-red-600 dark:text-red-400 rounded-2xl text-sm font-medium border border-red-100 dark:border-red-900/30">
+                      {aiError}
+                    </div>
+                  )}
+
+                  <button 
+                    onClick={handleAIGenerate}
+                    disabled={isAILoading || !aiPrompt.trim()}
+                    className="w-full p-4 bg-primary text-white rounded-2xl font-bold hover:bg-primary/90 transition-all active:scale-95 disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center gap-2"
+                  >
+                    {isAILoading ? (
+                      <>
+                        <Loader2 className="w-5 h-5 animate-spin" />
+                        <span>Gerando tarefas...</span>
+                      </>
+                    ) : (
+                      <>
+                        <Sparkles className="w-5 h-5" />
+                        <span>Gerar Tarefas com IA</span>
+                      </>
+                    )}
+                  </button>
+                </div>
               </div>
             </motion.div>
           </div>
