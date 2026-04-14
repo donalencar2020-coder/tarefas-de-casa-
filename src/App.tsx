@@ -1,6 +1,7 @@
 import React, { useState, useEffect, useMemo, useCallback } from 'react';
 import { 
   signInWithPopup, 
+  signInWithRedirect,
   GoogleAuthProvider, 
   signInAnonymously,
   signInWithEmailAndPassword,
@@ -497,10 +498,29 @@ export default function App() {
 
   const login = useCallback(async () => {
     const provider = new GoogleAuthProvider();
+    provider.setCustomParameters({ prompt: 'select_account' });
+    setAuthError('');
     try {
       await signInWithPopup(auth, provider);
-    } catch (error) {
+    } catch (error: any) {
       console.error('Login error:', error);
+      if (error.code === 'auth/popup-closed-by-user' || error.code === 'auth/popup-blocked') {
+        setAuthError('O navegador bloqueou a janela de login. Tente usar o botão "Entrar com Google (Redirecionamento)" abaixo ou abra o app em uma nova aba.');
+      } else {
+        setAuthError(error.message || 'Erro ao entrar com o Google. Tente novamente.');
+      }
+    }
+  }, []);
+
+  const loginWithRedirect = useCallback(async () => {
+    const provider = new GoogleAuthProvider();
+    provider.setCustomParameters({ prompt: 'select_account' });
+    setAuthError('');
+    try {
+      await signInWithRedirect(auth, provider);
+    } catch (error: any) {
+      console.error('Redirect Login error:', error);
+      setAuthError(error.message || 'Erro ao redirecionar para o Google.');
     }
   }, []);
 
@@ -805,6 +825,14 @@ export default function App() {
                 >
                   <img src="https://www.google.com/favicon.ico" className="w-6 h-6 dark:invert-0 invert" alt="Google" />
                   Entrar com Google
+                </button>
+
+                <button 
+                  onClick={loginWithRedirect}
+                  className="w-full bg-slate-100 dark:bg-slate-800 text-slate-700 dark:text-slate-300 py-3 rounded-2xl font-semibold hover:bg-slate-200 dark:hover:bg-slate-700 transition-all flex items-center justify-center gap-2 active:scale-95 text-sm"
+                >
+                  <img src="https://www.google.com/favicon.ico" className="w-4 h-4" alt="Google" />
+                  Entrar com Google (Redirecionamento)
                 </button>
                 
                 <button 
